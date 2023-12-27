@@ -1,4 +1,4 @@
-### Imoplementation of Cloud design pattern
+### Implementation of Cloud design pattern
 
 ### Overview
 
