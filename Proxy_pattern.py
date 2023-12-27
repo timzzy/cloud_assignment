@@ -12,9 +12,9 @@ class MySQLProxy:
     def connect(self):
         self.proxy_instance = mysql.connector.connect(
             host=self.master_host,
-            user='your_username',
-            password='your_password',
-            database='your_database'
+            user='root',
+            password='',
+            database='ndb'
         )
 
     def direct_hit(self, query):
@@ -28,9 +28,9 @@ class MySQLProxy:
         slave_host = random.choice(self.slave_hosts)
         slave_instance = mysql.connector.connect(
             host=slave_host,
-            user='your_username',
-            password='your_password',
-            database='your_database'
+            user='root',
+            password='',
+            database='ndb'
         )
         cursor = slave_instance.cursor()
         cursor.execute(query)
@@ -47,17 +47,17 @@ class MySQLProxy:
             if response_time is not None:
                 ping_times[host] = response_time
 
-        # Sort servers based on response time
+        # we Sort servers based on response time
         sorted_servers = sorted(ping_times.items(), key=lambda x: x[1])
 
-        # Forward request to the server with the least response time
+        # We Forward request to the server with the least response time
         best_server = sorted_servers[0][0]
 
         best_instance = mysql.connector.connect(
             host=best_server,
             user='root',
             password='',
-            database='NDB'
+            database='ndb'
         )
 
         cursor = best_instance.cursor()
@@ -71,21 +71,22 @@ class MySQLProxy:
         if self.proxy_instance:
             self.proxy_instance.close()
 
+
+
 if __name__ == "__main__":
-    # Replace the following values with your MySQL configuration
-    master_host = "your_master_host"
-    slave_hosts = ["slave_host1", "slave_host2", "slave_host3"]
+    master_host = "172.31.83.148"
+    slave_hosts = ["172.31.88.136", "172.31.93.116", "172.31.81.29"]
 
     proxy = MySQLProxy(master_host, slave_hosts)
 
-    # Choose the proxy type: "direct_hit", "random_forward", or "customized_forward"
+    # we select the proxy type: "direct_hit", "random_forward", or "customized_forward"
     proxy_type = "customized_forward"
 
-    # Connect to the proxy instance
+    # we Connect to the proxy instance
     proxy.connect()
 
-    # Example query
-    query = "SELECT * FROM your_table;"
+    # we ran a sample query
+    query = "SELECT * FROM sbtest1;"
 
     if proxy_type == "direct_hit":
         result = proxy.direct_hit(query)

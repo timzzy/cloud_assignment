@@ -32,14 +32,14 @@ class GatekeeperApp:
 
 
 if __name__ == "__main__":
-    manager_host = "192.168.1.110"
+    manager_host = "172.31.83.148"
     manager_user = "testuser"
     manager_password = ""
-    manager_database = "CL_manager"
+    manager_database = "ndb"
 
     gatekeeper_app = GatekeeperApp(manager_host, manager_user, manager_password, manager_database)
 
-    query = "SELECT * FROM clinicTable;"
+    query = "SELECT * FROM sbtest1;"
 
     try:
         gatekeeper_app.connect_to_manager()
