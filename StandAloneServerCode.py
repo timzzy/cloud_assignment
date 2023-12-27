@@ -17,7 +17,7 @@ sudo mysql -u root < sakila-db/sakila-data.sql
 
 # feeding the script to Base64
 user_data = base64.b64encode(bash_script.encode("ascii")).decode('ascii')
-
+ 
 instance = ec2.create_instances(
     ImageId='ami-06aa3f7caf3a30282',
     MinCount=1,
