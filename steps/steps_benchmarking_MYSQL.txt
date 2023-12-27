@@ -1,0 +1,37 @@
+
+
+====================================================================
+======================== BenchMarking MySQL ========================
+====================================================================
+# From the ClusterControl server Benchmarking with Sysbench
+sudo apt-get install sysbench
+sudo mysql -u root -p
+create database dbtest;
+# Check if this host is allowed to connect?
+SELECT host FROM mysql.user WHERE user = 'root';
+# If the output of the above command does not include the IP address ‘yourConnectingHostIP’,
+# you need to grant the necessary permissions to the ‘root’ user to connect from this IP address.
+# You can do this by running the following command:
+# GRANT ALL ON sbtest.* TO 'root'@'yourConnectingHostIP' IDENTIFIED BY 'your_password';
+CREATE USER 'root'@'172.31.83.148';
+GRANT ALL ON dbtest.* TO 'root'@'172.31.83.148';
+# Run following for changes to take effect:
+FLUSH PRIVILEGES;
+# Check Status now:
+SELECT host FROM mysql.user WHERE user = 'root';
+exit
+# Use the prepare statement to generate a table in the specified database which will be used when performing tests.
+# sudo sysbench /usr/share/sysbench/oltp_read_write.lua --table-size=1000000 --mysql-db=dbtest --mysql-user=[USER] --mysql-password=[PASSWORD] prepare
+sudo sysbench /usr/share/sysbench/oltp_read_write.lua --table-size=1000000 --mysql-db=dbtest --mysql-user=root prepare
+sudo mysql -u root -p
+use dbtest;
+show tables;
+SELECT COUNT(*) FROM sbtest1;
+exit
+sudo sysbench /usr/share/sysbench/oltp_read_write.lua --table-size=1000000M \
+ --threads=6 --time=60 --events=0 --mysql-db=dbtest --mysql-user=root --mysql-password run
+# Clean up your test area.
+drop database dbtest;
+# If you are unable to drop the whole database then Sysbench comes with a cleanup command.
+sysbench /usr/share/sysbench/oltp_read_write.lua --mysql-db=dbtest --mysql-user=root --mysql-password cleanup
+https://www.jamescoyle.net/how-to/1131-benchmark-mysql-server-performance-with-sysbench

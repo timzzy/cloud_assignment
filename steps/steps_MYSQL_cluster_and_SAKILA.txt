@@ -1,0 +1,361 @@
+====================================================================
+=================== MySQL NDB Cluster Sakila DB ====================
+====================================================================
+- Management nodes (ndb_mgmd): store the cluster’s configuration and control the data nodes
+- Data nodes (ndbd): where cluster data is stored
+
+- After communicating with the management node, clients (MySQL clients, servers, or native APIs)
+connect directly to these data nodes.
+
+- In MySQL Cluster there is no replication of data, but instead data node synchronization
+
+- For this purpose a special data engine must be used — NDBCluster (NDB)
+
+- cluster as a single logical MySQL environment with redundant components
+- So, a MySQL Cluster can participate in replication with other MySQL Clusters
+
+- Create 4 servers and note their private DNS
+	ip-172-31-83-148.ec2.internal 	will be the Cluster Manager & MySQL server node
+	ip-172-31-88-136.ec2.internal 	will be the 1st data node
+	ip-172-31-93-116.ec2.internal 	will be the 2nd data node
+	ip-172-31-81-29.ec2.internal 	will be the 3rd data node
+	
+- https://dev.mysql.com/get/Downloads/MySQL-Cluster-8.0/mysql-cluster-community-management-server_8.0.35-1ubuntu20.04_amd64.deb
+
+# Run on Management Node
+# Download MySQL Cluster Management Server
+cd ~
+wget https://dev.mysql.com/get/Downloads/MySQL-Cluster-8.0/mysql-cluster-community-management-server_8.0.35-1ubuntu20.04_amd64.deb
+# or
+# wget https://dev.mysql.com/get/Downloads/MySQL-Cluster-7.6/mysql-cluster-community-management-server_7.6.6-1ubuntu18.04_amd64.deb
+# Install MySQL Cluster Management Server
+sudo dpkg -i mysql-cluster-community-management-server_8.0.35-1ubuntu20.04_amd64.deb
+# or
+# sudo dpkg -i mysql-cluster-community-management-server_7.6.6-1ubuntu18.04_amd64.deb
+# Configure Cluster Manager
+# MySQL Cluster launches with CLusterManager as it's 1st argument. It's configuration file:
+# Create and use the following configuration file: /var/lib/mysql-cluster/config.ini
+# Create the /var/lib/mysql-cluster directory
+sudo mkdir /var/lib/mysql-cluster
+
+
+
+------------------------------ Manual Work ------------------------------
+# Then create and edit the configuration file
+sudo nano /var/lib/mysql-cluster/config.ini
+
+# PASTE
+[ndbd default]
+# Options affecting ndbd processes on all data nodes:
+NoOfReplicas=3	# Number of replicas
+
+[ndb_mgmd]
+# Management process options:
+hostname=ip-172-31-83-148.ec2.internal # Hostname of the Manager
+datadir=/var/lib/mysql-cluster 	# Directory for the log files
+
+[ndbd]
+hostname=ip-172-31-88-136.ec2.internal # Hostname/IP of the 1st data node
+NodeId=2			# Node ID for this data node
+datadir=/usr/local/mysql/data	# Remote directory for the data files
+
+[ndbd]
+hostname=ip-172-31-93-116.ec2.internal # Hostname/IP of the 2nd data node
+NodeId=3			# Node ID for this data node
+datadir=/usr/local/mysql/data	# Remote directory for the data files
+
+[ndbd]
+hostname=ip-172-31-81-29.ec2.internal # Hostname/IP of the 3rd data node
+NodeId=4			# Node ID for this data node
+datadir=/usr/local/mysql/data	# Remote directory for the data files
+
+[mysqld]
+# SQL node options:
+hostname=ip-172-31-83-148.ec2.internal # In our case the MySQL server/client is on the same Droplet as the cluster manager
+
+
+
+# PASTE COMPLETED, SAVE & CLOSE EDITOR
+
+# Start the manager by executing the ndb_mgmd binary and specifying its config file using the -f flag:
+sudo ndb_mgmd -f /var/lib/mysql-cluster/config.ini
+# You should see the following output:
+# Output
+# MySQL Cluster Management Server mysql-5.7.22 ndb-7.6.6
+# 2018-07-25 21:48:39 [MgmtSrvr] INFO     -- The default config directory '/usr/mysql-cluster' does not exist. Trying to create it...
+# 2018-07-25 21:48:39 [MgmtSrvr] INFO     -- Successfully created config directory
+
+# MySQL Cluster Management server has successfully been installed!!!!!!!!!!-------------
+
+
+
+# Ideally, we’d like to start the Cluster Management server automatically on boot, So, we’re going to create and enable a systemd service:
+# Kill the running server
+sudo pkill -f ndb_mgmd
+# Open and edit the following systemd Unit file
+sudo nano /etc/systemd/system/ndb_mgmd.service
+
+# PASTE
+[Unit]
+Description=MySQL NDB Cluster Management Server
+After=network.target auditd.service
+
+[Service]
+Type=forking
+ExecStart=/usr/sbin/ndb_mgmd -f /var/lib/mysql-cluster/config.ini
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+
+# PASTE COMPLETED, SAVE & CLOSE
+
+
+
+
+# Reload systemd’s manager configuration:
+sudo systemctl daemon-reload
+# Enable the service we just created so that the MySQL Cluster Manager starts on reboot:
+sudo systemctl enable ndb_mgmd
+# Start the service:
+sudo systemctl start ndb_mgmd
+# Verify that the NDB Cluster Management service is running:
+sudo systemctl status ndb_mgmd
+# Should see the following output:
+# ● ndb_mgmd.service - MySQL NDB Cluster Management Server
+#    Loaded: loaded (/etc/systemd/system/ndb_mgmd.service; enabled; vendor preset: enabled)
+#    Active: active (running) since Thu 2018-07-26 21:23:37 UTC; 3s ago
+#   Process: 11184 ExecStart=/usr/sbin/ndb_mgmd -f /var/lib/mysql-cluster/config.ini (code=exited, status=0/SUCCESS)
+#  Main PID: 11193 (ndb_mgmd)
+#     Tasks: 11 (limit: 4915)
+#    CGroup: /system.slice/ndb_mgmd.service
+#            └─11193 /usr/sbin/ndb_mgmd -f /var/lib/mysql-cluster/config.ini
+
+# Now Allow incoming connections from other MySQL Cluster nodes on our private network:
+# Add rules in Security Group to allow local incoming connections from all 3 data nodes:
+# ip-172-31-88-136.ec2.internal, ip-172-31-93-116.ec2.internal, ip-172-31-81-29.ec2.internal
+# or in AWS-SecurityGroup add rule to ALLOW ALL INBOUND TRAFFIC FROM these DataNodes' IPS/32, as it 'll connect on port 1186
+
+
+
+================================ Data Nodes ================================
+
+# Download & Install the ndbd MySQL Cluster data node daemon, and configure the nodes so they can communicate with the Cluster Manager.
+cd ~
+wget https://dev.mysql.com/get/Downloads/MySQL-Cluster-8.0/mysql-cluster-community-data-node_8.0.35-1ubuntu20.04_amd64.deb
+# or
+# wget https://dev.mysql.com/get/Downloads/MySQL-Cluster-7.6/mysql-cluster-community-data-node_7.6.6-1ubuntu18.04_amd64.deb
+# Install the data node binary, we need to install a dependency, libclass-methodmaker-perl:
+sudo apt update
+sudo apt install libclass-methodmaker-perl
+# Now install the data note binary using dpkg:
+sudo dpkg -i mysql-cluster-community-data-node_8.0.35-1ubuntu20.04_amd64.deb
+# or
+# sudo dpkg -i mysql-cluster-community-data-node_7.6.6-1ubuntu18.04_amd64.deb
+------------------------------ Manual Work ------------------------------
+# Data nodes pull their configuration from MySQL’s standard location, /etc/my.cnf. Create this file:
+sudo nano /etc/my.cnf
+
+
+# PASTE
+[mysql_cluster]
+# Options for NDB Cluster processes:
+ndb-connectstring=ip-172-31-83-148.ec2.internal  # location of cluster manager
+# PASTE COMPLETED, SAVE & CLOSE
+
+# Rest of the configuration will be pulled from the manager directly.
+# Data node will find out that its data directory is /usr/local/mysql/data, per the manager’s configuration.
+# Before starting the daemon, we’ll create this directory on the node:
+sudo mkdir -p /usr/local/mysql/data
+# For ndbd running on t2.micro, we need more memory. So, add some swap file.
+sudo fallocate -l 5G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
+# Start the data node:
+sudo ndbd
+# Should see the following output:
+# Output
+# 2018-07-18 19:48:21 [ndbd] INFO     -- Angel connected to 'ip-172-31-83-148.ec2.internal:1186'
+# 2018-07-18 19:48:21 [ndbd] INFO     -- Angel allocated nodeid: 2
+# Check if the ndbd process is running
+ps -ef | grep ndbd
+# If not, then remove previous swapfile and add more
+# Execute the following code to remove swapfile and previous code to add more swapfile
+---------- sudo swapoff -a
+---------- sudo rm /swapfile
+# Check the logs of ndbd: Change the number acordingly:
+cat /usr/local/mysql/data/ndb_2_out.log
+--------------------- NDB data node daemon has been successfully installed ---------------------
+# Allow incoming connections from other MySQL Cluster nodes: (Do it in AWS-SecurityGroup, Don't forget to add Management Node's Ip as well in SecurityGroup for allowed inbound traffic
+
+# The data node daemon should start up automatically when the server boots.
+# Kill the running ndbd process:
+sudo pkill -f ndbd
+sudo nano /etc/systemd/system/ndbd.service
+
+# PASTE
+[Unit]
+Description=MySQL NDB Data Node Daemon
+After=network.target auditd.service
+
+[Service]
+Type=forking
+ExecStart=/usr/sbin/ndbd
+ExecReload=/bin/kill -HUP $MAINPID
+KillMode=process
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+
+# PASTE COMPLETED, SAVE & CLOSE
+# Reload systemd’s manager configuration
+sudo systemctl daemon-reload
+# Enable the service
+sudo systemctl enable ndbd
+# Start the service:
+sudo systemctl start ndbd
+# Verify that the NDB Cluster Management service is running:
+sudo systemctl status ndbd
+# Should see the following output:
+# Output
+# ● ndbd.service - MySQL NDB Data Node Daemon
+#    Loaded: loaded (/etc/systemd/system/ndbd.service; enabled; vendor preset: enabled)
+#    Active: active (running) since Thu 2018-07-26 20:56:29 UTC; 8s ago
+#   Process: 11972 ExecStart=/usr/sbin/ndbd (code=exited, status=0/SUCCESS)
+#  Main PID: 11984 (ndbd)
+#     Tasks: 46 (limit: 4915)
+#    CGroup: /system.slice/ndbd.service
+#            ├─11984 /usr/sbin/ndbd
+#            └─11987 /usr/sbin/ndbd
+------- ndbd MySQL Cluster data node daemon is now running as a systemd service -------
+
+
+
+
+
+
+========== Configuring and Starting the MySQL Server and Client ==========
+
+# We need to install the custom SQL server packaged with the other MySQL Cluster software we’ve installed
+
+------------------------ On Cluster Manager Node ------------------------
+cd ~
+wget https://dev.mysql.com/get/Downloads/MySQL-Cluster-8.0/mysql-cluster_8.0.35-1ubuntu20.04_amd64.deb-bundle.tar
+# or
+# wget https://dev.mysql.com/get/Downloads/MySQL-Cluster-7.6/mysql-cluster_7.6.6-1ubuntu18.04_amd64.deb-bundle.tar
+mkdir install
+tar -xvf mysql-cluster_8.0.35-1ubuntu20.04_amd64.deb-bundle.tar -C install/
+# or
+# tar -xvf mysql-cluster_7.6.6-1ubuntu18.04_amd64.deb-bundle.tar -C install/
+cd install
+# Install Dependencies
+sudo apt update
+sudo apt install libaio1 libmecab2
+# Install the MySQL Cluster dependencies, bundled in the tar archive we just extracted: (Might Cause Errors)
+sudo dpkg -i mysql-common_8.0.35-1ubuntu20.04_amd64.deb
+# sudo dpkg -i mysql-common_7.6.6-1ubuntu18.04_amd64.deb
+sudo dpkg -i mysql-cluster-community-client-plugins_8.0.35-1ubuntu20.04_amd64.deb
+sudo dpkg -i mysql-cluster-community-client-core_8.0.35-1ubuntu20.04_amd64.deb
+sudo dpkg -i mysql-cluster-community-client_8.0.35-1ubuntu20.04_amd64.deb
+# sudo dpkg -i mysql-cluster-community-client_7.6.6-1ubuntu18.04_amd64.deb
+sudo dpkg -i mysql-client_8.0.35-1ubuntu20.04_amd64.deb
+# sudo dpkg -i mysql-client_7.6.6-1ubuntu18.04_amd64.deb
+sudo dpkg -i mysql-cluster-community-server-core_8.0.35-1ubuntu20.04_amd64.deb
+# For following command, choose the password for MySQL DB's root account [root]
+sudo dpkg -i mysql-cluster-community-server_8.0.35-1ubuntu20.04_amd64.deb
+# sudo dpkg -i mysql-cluster-community-server_7.6.6-1ubuntu18.04_amd64.deb
+
+# Install the MySQL server binary using dpkg:
+sudo dpkg -i mysql-server_8.0.35-1ubuntu20.04_amd64.deb
+# sudo dpkg -i mysql-server_7.6.6-1ubuntu18.04_amd64.deb
+# Configure this MySQL server installation
+# Configuration for MySQL Server is stored in the default /etc/mysql/my.cnf file. Open it and Append:
+sudo nano /etc/mysql/my.cnf
+# APPEND
+
+[mysqld]
+# Options for mysqld process:
+ndbcluster                      # run NDB storage engine
+
+[mysql_cluster]
+# Options for NDB Cluster processes:
+ndb-connectstring=ip-172-31-83-148.ec2.internal  # location of management server
+
+
+# APPEND COMPLETED, SAVE & CLOSE
+
+# Restart the MySQL server:
+sudo systemctl restart mysql
+# MySQL by default should start automatically when your server reboots:
+sudo systemctl enable mysql
+----------- SQL server should now be running on your Cluster Manager / MySQL Server -----------
+
+
+=================== Verifying MySQL Cluster Installation ===================
+# Log in to your Cluster Manager / SQL Server node
+# Open the MySQL client from the command line and connect to the root account
+sudo mysql -u root -p
+# Enter Password, Leave blank if didn't set already
+SHOW ENGINE NDB STATUS \G
+exit
+# Open the Cluster management console
+ndb_mgm
+SHOW
+
+
+------------------------ successfully connected to your MySQL Cluster ------------------------
+# Exit mysql prompt
+quit
+# Some Additional Tests
+sudo ndb_mgm
+# In ndb_mgm prompt run:
+SHOW
+# Run One after the other
+1 STATUS
+2 STATUS
+3 STATUS
+4 STATUS
+quit
+
+
+
+#============================= Open mysql and create a Table and test
+sudo mysql -u root -p
+CREATE DATABASE clustertest;
+USE clustertest;
+CREATE TABLE test_table (name VARCHAR(20), value VARCHAR(20)) ENGINE=ndbcluster;
+INSERT INTO test_table (name,value) VALUES('some_name','some_value');
+SELECT * FROM test_table;
+# When you insert data into and select data from an `ndbcluster` table,
+# the cluster load balances queries between all the available data nodes.
+# This improves the stability and performance of your MySQL database installation.
+
+# We can also set the default storage engine to `ndbcluster` in the `my.cnf` file
+# that we edited previously. If we do this, we won’t need to specify the `ENGINE` option when creating tables.
+# consult the MySQL [Reference Manual](https://dev.mysql.com/doc/refman/5.7/en/storage-engine-setting.html).
+
+
+
+=========================== Sakila DB =============================
+===================================================================
+# Exit from MySQL
+exit
+# downloading SakilaDB
+sudo wget https://downloads.mysql.com/docs/sakila-db.tar.gz
+sudo tar -xvzf sakila-db.tar.gz
+# importing SakilaDB
+sudo mysql -u root < sakila-db/sakila-schema.sql
+sudo mysql -u root < sakila-db/sakila-data.sql
+sudo mysql -u root -p
+USE sakila;
+SHOW FULL TABLES;
+SELECT COUNT(*) FROM film;
+SELECT COUNT(*) FROM film_text;
+https://dev.mysql.com/doc/sakila/en/sakila-installation.html
+https://www.digitalocean.com/community/tutorials/how-to-create-a-multi-node-mysql-cluster-on-ubuntu-18-04
+
+

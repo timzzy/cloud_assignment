@@ -1,0 +1,13 @@
+Place your AWS credentials into the appropriate file
+~/.aws/credentials
+
+Clone the repository and navigate to the infrastructure directory
+cd AWS_ML_SERVING/infrastructure
+
+Set up a virtual environment and activate it
+python -m virtualenv venv
+source venv/bin/activate
+
+Execute the client script:
+python proxy_pattern.py
+

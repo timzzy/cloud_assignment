@@ -1,0 +1,17 @@
+====================================================================
+=================== Stand Alone MySQL Sakila DB ====================
+====================================================================
+# Setup your aws account
+# Open bash / terminal
+# run:
+py StandAloneServerCode.py
+# For Testing, Login to instance and run:
+sudo mysql -u root -p
+USE sakila;
+SHOW FULL TABLES;
+SELECT COUNT(*) FROM film;
+SELECT COUNT(*) FROM film_text;
+https://dev.mysql.com/doc/sakila/en/sakila-installation.html
+
+
+
